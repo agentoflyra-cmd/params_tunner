@@ -97,10 +97,10 @@ fn indent_each_line(text: &str, indent: usize) -> String {
 /// 分组参数名（按首个点前的前缀分组）
 /// "FollowPath.max_vel_x" → 保持为平铺键（ROS 2 参数名本身就是点分隔）
 /// 这里我们保持原样输出，按节点组织
-fn filter_parameters(
-    params: &[ParameterEntry],
-    selection: &ExportSelection,
-) -> Vec<&ParameterEntry> {
+fn filter_parameters<'a>(
+    params: &'a [ParameterEntry],
+    selection: &'a ExportSelection,
+) -> Vec<&'a ParameterEntry> {
     params
         .iter()
         .filter(|p| {

@@ -6,8 +6,7 @@ use agent_client::AgentClient;
 use parameter_model::{
     ExportSelection, ParameterBackend, ParameterTarget, ParameterTargetSummary, ParameterUpdate,
 };
-use std::sync::Arc;
-use tauri::State;
+use tauri::{Manager, State};
 
 /// 应用状态 — 持有后端实现
 pub struct AppState {
@@ -77,7 +76,7 @@ async fn export_yaml(
 }
 
 #[tauri::command]
-async fn get_backend_info(state: State<'_, AppState>) -> Result<String, String> {
+async fn get_backend_info(_state: State<'_, AppState>) -> Result<String, String> {
     // 返回后端类型信息（仅调试用）
     Ok("MockBackend (use --real-agent to connect to ROS 2)".to_string())
 }
@@ -90,12 +89,19 @@ pub fn run() {
             // 尝试启动真实 agent，失败则回退到 MockBackend
             let backend: Box<dyn ParameterBackend + Send + Sync> = {
                 let agent_path = app
-                    .path_resolver()
-                    .resolve_resource("../agent/main.py")
-                    .or_else(|| app.path_resolver().resolve_resource("agent/main.py"));
+                    .path()
+                    .resolve("agent/main.py", tauri::path::BaseDirectory::Resource)
+                    .ok()
+                    .filter(|p| p.exists())
+                    .or_else(|| {
+                        // 也检查开发目录
+                        let cwd = std::env::current_dir().ok()?;
+                        let dev_path = cwd.join("../agent/main.py");
+                        if dev_path.exists() { Some(dev_path) } else { None }
+                    });
 
                 match agent_path {
-                    Some(path) if path.exists() => {
+                    Some(path) => {
                         match AgentClient::spawn(path.to_str().unwrap_or("")) {
                             Ok(client) => {
                                 eprintln!("ROS 2 Agent connected");
@@ -110,7 +116,7 @@ pub fn run() {
                             }
                         }
                     }
-                    _ => {
+                    None => {
                         eprintln!("ROS 2 agent not found, using mock backend");
                         Box::new(agent_client::MockBackend)
                     }

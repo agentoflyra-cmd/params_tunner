@@ -12,7 +12,7 @@ const isTauri = typeof window !== "undefined" && "__TAURI__" in window;
 
 async function tauriInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   if (isTauri) {
-    const { invoke } = await import("@tauri-apps/api/tauri");
+    const { invoke } = await import("@tauri-apps/api/core");
     return invoke<T>(cmd, args);
   }
   throw new Error("Not running in Tauri");

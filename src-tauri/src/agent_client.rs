@@ -135,18 +135,40 @@ impl AgentClient {
         std::thread::sleep(Duration::from_millis(200));
 
         // 如果还活着就杀掉
-        let mut child = self.child.lock().unwrap();
-        if child.try_wait().ok().flatten().is_none() {
-            let _ = child.kill();
-            let _ = child.wait();
+        {
+            let mut child = self.child.lock().unwrap();
+            if child.try_wait().ok().flatten().is_none() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
         }
-        drop(child);
 
-        // 重新 spawn
-        let new = Self::spawn(&self.agent_path)?;
-        *self.child.lock().unwrap() = new.child.into_inner().unwrap();
-        *self.writer.lock().unwrap() = new.writer.into_inner().unwrap();
-        *self.reader.lock().unwrap() = new.reader.into_inner().unwrap();
+        // 重新 spawn，逐个替换字段
+        let mut new_child = Command::new("python3")
+            .arg(&self.agent_path)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .context("Failed to restart ROS 2 parameter agent")?;
+
+        let new_stdin = new_child
+            .stdin
+            .take()
+            .context("Failed to capture agent stdin on restart")?;
+        let new_stdout = new_child
+            .stdout
+            .take()
+            .context("Failed to capture agent stdout on restart")?;
+
+        // 替换现有字段（不移动出 Drop 类型）
+        *self.child.lock().unwrap() = new_child;
+        *self.writer.lock().unwrap() = Box::new(new_stdin);
+        *self.reader.lock().unwrap() = BufReader::new(Box::new(new_stdout));
+
+        // 重置 id 计数器
+        *self.next_id.lock().unwrap() = 0;
+
         Ok(())
     }
 }
@@ -411,7 +433,7 @@ impl ParameterBackend for MockBackend {
         })
     }
 
-    async fn set_parameter(&self, node: &str, update: ParameterUpdate) -> Result<ApplyResult> {
+    async fn set_parameter(&self, _node: &str, update: ParameterUpdate) -> Result<ApplyResult> {
         // Mock: 总是成功
         Ok(ApplyResult {
             name: update.name,
